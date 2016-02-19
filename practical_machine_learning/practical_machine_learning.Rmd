@@ -1,0 +1,100 @@
+---
+title: "Practical Machine Learning Project"
+output: html_document
+---
+###Executive Summary
+This study utilizes body sensor data from the Human Activity Recognition project [(Found Here)]( http://groupware.les.inf.puc-rio.br/har) to classify the quality of barbell lifts into one of five grades: A, B, C, D, and E. Random subsampling cross validation was employed using a data split of 70% for training data and 30% for test data. A random forest model was developed which yielded an out-of-sample accuracy above 99.5% on the test data and a Kappa value above 0.995. Finally, we make predictions for a validation set consisting of 20 observations whose grades are not known.
+
+###Data Exploration and Feature Selection
+A cursory look at the dataset [(Found Here)](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv) reveals a large number of columns with many having missing or NA values. In addition, there were several columns that clearly should not be included as predictors (e.g. the subject's name, the time of day, etc.). In order to easily and flexibly select out the columns needed, we make a few functions for decoding Excel-style columns (e.g. A = 1, D = 4, AB = 28, etc.)
+
+```{r chunk1, results='asis', echo=TRUE, cache=TRUE}
+# ----------------------------------- Column Processing Utility Functions -----------------------------------------
+
+# Decode an individual character based on a specified string order.
+nval <- function(chars, char) {
+  rv <- 0
+  if(char != "") {
+		i <- 1
+		while(!is.element(substr(chars, i, i), c("", char))) {i <- i + 1}
+		if(substr(chars, i, i) == char) {rv <- i} else {rv <- NA}
+	}
+	rv
+}
+
+# Decode a single column string (e.g. A=1, D=4, AD=30)
+decode_col <- function(col.str) {
+	rv <- col.str
+	if(is.character(col.str)) {
+		i <- 1; total <- 0
+		v <- c()
+		while(substr(col.str, i, i) != "") {
+			v[i] <- substr(col.str, i, i)
+			i <- i + 1
+		}
+		v <- rev(v)
+		i <- 0
+		while(i < length(v)) {
+			total <- total + (nval("abcdefghijklmnopqrstuvwxyz", tolower(v[i + 1])) * (26 ^ i))
+			i <- i + 1
+		}
+		rv <- total
+	}
+	rv
+}
+
+# Takes in a vector of Excel-style columns and gets numbers. Some can be ranges ("AA-AD" means 27-30).
+decode <- function(colcodes) {
+	nums <- c()
+	for(code in colcodes) {
+		rng <- strsplit(code,"-")[[1]]
+		nums <- append(nums, decode_col(rng[1]):decode_col(rng[length(rng)]))
+	}
+	nums
+}
+```
+
+By inspecting the data spreadsheet, we select out the columns that appear to have meaningful predictors and are not mostly missing or NA values (after first reading in the data). Finally, we look to see if any columns are near zero and can be readily omitted:
+
+```{r chunk2, echo=TRUE, cache=TRUE, dependson=c("chunk1")}
+library(caret)
+raw_csv <- read.csv("pml-training.csv")
+dataset <- raw_csv[decode(c("G-K", "AK-AW", "BH-BP", "CF-CH", "CX", "DI-DT", "EJ", "EU-FD"))]
+print(nearZeroVar(dataset,saveMetrics=TRUE))
+```
+
+We see that there are no near-zero columns, leaving 54 columns to work with. This is a large number of columns, so we need either 1) a good method for selecting features or 2) a robust model able to handle noisy or less-than-pristine data. We choose the latter and opt for using a random forest method.
+
+###Machine Learning and Results
+Now we implement the random forest method. Since we have a reasonably large dataset, a simple random subsampling cross validation approach is used. The out-of-sample accuracy is estimated based on predictions made on the resuting test set. We begin by building training and test data sets from our original set (using 70% training and 30% test) and proceed to build and test our model.
+
+```{r chunk3, echo=TRUE, cache=TRUE, dependson=c("chunk1", "chunk2")}
+# Build train and test datasets
+set.seed(32343)
+trainp <- 0.7
+inTrain <- createDataPartition(y = dataset$classe, p = trainp, list = FALSE)
+training <- dataset[inTrain,]
+testing <- dataset[-inTrain,]
+
+# Build the model
+start.time <- Sys.time()
+modelFit <- train(classe ~.,data=training, method="rf")
+end.time <- Sys.time()
+
+# Make predictions using test set and assess performance
+predictions <- predict(modelFit,newdata=testing)
+print(confusionMatrix(predictions,testing$classe))
+message(paste("All Done! Starting and ending times:", start.time, end.time))
+```
+
+In the results it is readily seen that the out-of-sample accuracy is above 99.5% and the Kappa value is above 0.995. Accordingly, a similar level of performance may be expected when making predictions on the final validation set.
+
+The final validation data [(Found Here)](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv) consists of 20 observations whose classe (i.e. grade) variables are not given. We predict grades for these using our trained random forest and report them below (side note - autograder marked all 20 of these correct):
+
+```{r chunk4, echo=TRUE, cache=TRUE, dependson=c("chunk1", "chunk2",  "chunk3")}
+prediction.data <- read.csv("pml-testing.csv")
+real.predictions <- predict(modelFit, newdata=prediction.data)
+pred.table <- data.frame(predictions = real.predictions)
+print(pred.table)
+```
+
