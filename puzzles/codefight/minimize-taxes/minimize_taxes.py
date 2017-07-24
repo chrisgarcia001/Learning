@@ -32,11 +32,13 @@ def minimizeTaxes(land):
 	best = None
 	for i in range(len(good_coords) - 1):
 		for j in range(i+1, len(good_coords)):
-			sq = square_coords(good_coords[i], good_coords[j])
-			if (reduce(lambda x,y: x and y, map(lambda (p,q): p >= 0 and q >= 0, sq)) and 
-			    reduce(lambda x,y: x and y, map(lambda z: z in good_coords, sq)) and 
-			    (best == None or best > dist(good_coords[i], good_coords[j]))):
-				best = dist(good_coords[i], good_coords[j])
+			d = dist(good_coords[i], good_coords[j])
+			if best == None or d < best:
+				sq = square_coords(good_coords[i], good_coords[j])
+				if (reduce(lambda x,y: x and y, map(lambda (p,q): p >= 0 and q >= 0, sq)) and 
+					reduce(lambda x,y: x and y, map(lambda z: z in good_coords, sq))):
+					best = d
 	return int(round(best**2))
 			
-	
+
+				
